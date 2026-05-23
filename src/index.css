@@ -1,0 +1,127 @@
+@import url('https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Hanken Grotesk", sans-serif;
+  
+  /* Bento Grid Indigo Dark Accent palette */
+  --color-primary: #6366f1; /* Indigo-500 */
+  --color-primary-container: #312e81; /* Indigo-900 */
+  --color-on-primary: #ffffff;
+  --color-on-primary-fixed: #ffffff;
+  --color-on-primary-fixed-variant: #c7d2fe; /* Indigo-200 */
+  --color-primary-fixed: #4f46e5; /* Indigo-600 */
+  --color-primary-fixed-dim: #4338ca; /* Indigo-700 */
+  
+  --color-secondary: #a1a1aa; /* Zinc/Neutral-400 */
+  --color-secondary-container: #27272a; /* Zinc/Neutral-800 */
+  --color-on-secondary-container: #f4f4f5; /* Zinc/Neutral-100 */
+  --color-secondary-fixed: #1e1b4b; /* Indigo-950 for background of active sidebar buttons */
+  --color-secondary-fixed-dim: #111111;
+  
+  --color-tertiary: #10b981; /* Emerald-500 */
+  --color-tertiary-container: #064e3b; /* Emerald-950 */
+  --color-tertiary-fixed: #059669; /* Emerald-600 */
+  --color-on-tertiary-fixed-variant: #34d399; /* Emerald-400 */
+  
+  --color-error: #ef4444; /* Red-500 */
+  --color-error-container: #7f1d1d; /* Red-950 */
+  --color-on-error-container: #fca5a5; /* Red-300 */
+  
+  /* Deep dark neutral colors for Bento design layout */
+  --color-surface-container-low: #09090b; /* neutral-950 */
+  --color-surface-container-high: #18181b; /* neutral-900 */
+  --color-surface-container-highest: #27272a; /* neutral-800 */
+  --color-surface-container-lowest: #0d0d0f; /* custom very dark card base */
+  --color-surface-bright: #030303; /* absolute pitch black background */
+  --color-outline-variant: #1e1e24; /* neutral-800 border */
+  
+  --color-on-surface: #fafafa; /* neutral-50 for high contrast text */
+  --color-on-surface-variant: #a3a3a3; /* neutral-400 for secondary text */
+
+  /* Spacing system configurations */
+  --spacing-card-padding: 1.5rem; /* 24px */
+  --spacing-gutter-md: 1.5rem; /* 24px */
+  --spacing-margin-page: 2rem; /* 32px */
+}
+
+body {
+  background-color: #030303;
+  color: #fafafa;
+  font-family: var(--font-sans);
+}
+
+/* Enable native dark widgets & dropdowns */
+input, select, textarea {
+  color-scheme: dark;
+}
+
+/* Premium micro-shadows & glass effect for Bento Grid */
+.glass-card {
+  background: rgba(13, 13, 15, 0.85);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.6);
+  border-radius: 1.5rem; /* Bento Rounded-3xl style */
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.glass-card:hover {
+  border-color: rgba(99, 102, 241, 0.3); /* Indigo soft accent border */
+  box-shadow: 0 10px 30px -10px rgba(99, 102, 241, 0.2);
+  transform: translateY(-2px);
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #27272a;
+  border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #3f3f46;
+}
+
+/* Hardcopy POS Ticket printer-compliant @media styling specs */
+@media print {
+  /* Set background of page to white for paper conservation */
+  body, html {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+  
+  /* Mask everything outside active invoice modal from driver spool */
+  body * {
+    visibility: hidden !important;
+  }
+  
+  /* Expose invoice frame only */
+  #print-receipt-modal, #print-receipt-modal * {
+    visibility: visible !important;
+  }
+  
+  #print-receipt-modal {
+    position: absolute !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    top: 20px !important;
+    width: 350px !important;
+    background: #ffffff !important;
+    color: #1e293b !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+  }
+}
+

@@ -1,0 +1,6 @@
+{
+  "name": "MAM ERP POS & Pro-Ledger",
+  "description": "Unified Enterprise Point of Sale and Inventory Management Suite containing POS Quick Billing, Inventory Ledger, Movement History, Product Master, and Procurement Dashboard.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
