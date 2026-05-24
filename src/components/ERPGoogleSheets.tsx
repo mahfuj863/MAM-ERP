@@ -43,14 +43,172 @@ export default function ERPGoogleSheets() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [sheetsAuthDone, setSheetsAuthDone] = useState(false);
-  const [spreadsheetId, setSpreadsheetId] = useState<string>("");
-  const [spreadsheetUrl, setSpreadsheetUrl] = useState<string>("");
+  const [isSandbox, setIsSandbox] = useState(() => {
+    return typeof window !== "undefined" && localStorage.getItem("mam_erp_sheets_sandbox_active") === "true";
+  });
+  const [spreadsheetId, setSpreadsheetId] = useState<string>(() => {
+    return typeof window !== "undefined" ? (localStorage.getItem("mam_erp_sheets_spreadsheet_id") || "") : "";
+  });
+  const [spreadsheetUrl, setSpreadsheetUrl] = useState<string>(() => {
+    const saved = localStorage.getItem("mam_erp_sheets_spreadsheet_id");
+    return saved ? `https://docs.google.com/spreadsheets/d/${saved}/edit` : "";
+  });
   const [logs, setLogs] = useState<string[]>([]);
   
   // Loading & State flags
   const [isBtnLoading, setIsBtnLoading] = useState<string | null>(null);
   const [showImportConfirm, setShowImportConfirm] = useState(false);
   const [stagedImportProducts, setStagedImportProducts] = useState<Product[]>([]);
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+
+  // Local Excel / CSV Import and Export handlers
+  const handleCsvExport = () => {
+    try {
+      if (products.length === 0) {
+        alert("The inventory catalog is currently empty. Add products before generating a backup!");
+        return;
+      }
+      addLog("Generating spreadsheet export compilation string...");
+      
+      const headers = ["sku", "name", "category", "stockLevel", "minStockLevel", "reorderPoint", "costPrice", "sellPrice", "suggestedMsrp", "imageUrl", "location", "status", "description"];
+      
+      const rows = products.map(p => [
+        `"${p.sku.replace(/"/g, '""')}"`,
+        `"${p.name.replace(/"/g, '""')}"`,
+        `"${p.category.replace(/"/g, '""')}"`,
+        p.stockLevel,
+        p.minStockLevel,
+        p.reorderPoint || 0,
+        p.costPrice,
+        p.sellPrice,
+        p.suggestedMsrp || p.sellPrice,
+        `"${(p.imageUrl || "").replace(/"/g, '""')}"`,
+        `"${(p.location || "Branch Hub").replace(/"/g, '""')}"`,
+        `"${p.status}"`,
+        `"${(p.description || "").replace(/"/g, '""')}"`
+      ]);
+      
+      const csvContent = [headers.join(","), ...rows.map(r => r.join(","))].join("\r\n");
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", `mam_erp_products_backup_${new Date().toISOString().split('T')[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      addLog("SUCCESS: Exported active product catalog to physical standard .CSV Excel-compatible file!");
+    } catch (err: any) {
+      addLog(`CSV download crash: ${err.message || err}`);
+    }
+  };
+
+  const handleCsvImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    setCsvFile(file);
+    addLog(`Staged file for offline parsing: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`);
+    
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      if (!text) {
+        addLog("Offline parser failed: Empty sheet file payload received.");
+        return;
+      }
+      
+      try {
+        const lines = text.split(/\r?\n/).map(line => line.trim()).filter(line => line.length > 0);
+        if (lines.length < 2) {
+          addLog("Offline parser failed: No line items found beneath column headers.");
+          return;
+        }
+        
+        const parseCsvLine = (line: string) => {
+          const result = [];
+          let current = "";
+          let inQuotes = false;
+          for (let i = 0; i < line.length; i++) {
+            const char = line[i];
+            if (char === '"') {
+              inQuotes = !inQuotes;
+            } else if (char === ',' && !inQuotes) {
+              result.push(current.trim());
+              current = "";
+            } else {
+              current += char;
+            }
+          }
+          result.push(current.trim());
+          return result;
+        };
+        
+        const headers = parseCsvLine(lines[0]).map(h => h.toLowerCase());
+        const importedProducts: Product[] = [];
+        
+        const idxSku = headers.findIndex(h => h.includes("sku") || h.includes("id"));
+        const idxName = headers.findIndex(h => h.includes("name") || h.includes("title"));
+        const idxCategory = headers.findIndex(h => h.includes("category"));
+        const idxStock = headers.findIndex(h => h.includes("stock") || h.includes("qty") || h.includes("quantity"));
+        const idxMinStock = headers.findIndex(h => h.includes("min") || h.includes("reorder"));
+        const idxCost = headers.findIndex(h => h.includes("cost") || h.includes("buy"));
+        const idxSell = headers.findIndex(h => h.includes("sell") || h.includes("price") || h.includes("sale"));
+        
+        for (let i = 1; i < lines.length; i++) {
+          const cols = parseCsvLine(lines[i]);
+          if (cols.length === 0 || !cols[0]) continue;
+          
+          const sku = idxSku > -1 && cols[idxSku] ? cols[idxSku] : `SKU-${Math.floor(100000 + Math.random() * 900000)}`;
+          const name = idxName > -1 && cols[idxName] ? cols[idxName] : `Imported Item ${i}`;
+          const rawCat = idxCategory > -1 && cols[idxCategory] ? cols[idxCategory] : "Electronics";
+          const stock = idxStock > -1 && cols[idxStock] ? (parseInt(cols[idxStock]) || 0) : 50;
+          const minStock = idxMinStock > -1 && cols[idxMinStock] ? (parseInt(cols[idxMinStock]) || 5) : 10;
+          const cost = idxCost > -1 && cols[idxCost] ? (parseFloat(cols[idxCost]) || 0) : 10;
+          const sell = idxSell > -1 && cols[idxSell] ? (parseFloat(cols[idxSell]) || 0) : 15;
+          
+          let category: Product["category"] = "Electronics";
+          const lowerCat = rawCat.toLowerCase();
+          if (lowerCat.includes("bever")) category = "Beverages";
+          else if (lowerCat.includes("snack")) category = "Snacks";
+          else if (lowerCat.includes("office") || lowerCat.includes("supply")) category = "Office Supplies";
+          else if (lowerCat.includes("access")) category = "Accessories";
+          else if (lowerCat.includes("network")) category = "Networking";
+          else if (lowerCat.includes("work")) category = "Workstation";
+          else if (lowerCat.includes("serv")) category = "Server";
+          else if (lowerCat.includes("periph")) category = "Peripherals";
+          
+          importedProducts.push({
+            sku,
+            name,
+            category,
+            stockLevel: stock,
+            minStockLevel: minStock,
+            reorderPoint: minStock * 2,
+            costPrice: cost,
+            sellPrice: sell,
+            suggestedMsrp: sell * 1.2,
+            imageUrl: "https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=400&q=80",
+            location: "Main Branch",
+            status: stock <= 0 ? "Out of Stock" : stock <= minStock ? "Low Stock" : "Healthy",
+            description: `Imported via CSV/Excel template on ${new Date().toLocaleDateString()}`
+          });
+        }
+        
+        if (importedProducts.length > 0) {
+          setStagedImportProducts(importedProducts);
+          setShowImportConfirm(true);
+          addLog(`Offline Sync: Parsed ${importedProducts.length} excel records. Confirm to proceed.`);
+        } else {
+          addLog("Offline parser failed: Could not parse standard rows.");
+        }
+      } catch (exception: any) {
+        addLog(`Offline parsing error: ${exception.message}`);
+      }
+    };
+    reader.readAsText(file);
+  };
 
   // Logs terminal auto-scroll ref
   const logTerminalEndRef = useRef<HTMLDivElement>(null);
@@ -63,6 +221,22 @@ export default function ERPGoogleSheets() {
   // Auth Lifecycle setup
   useEffect(() => {
     addLog("Configured Google Sheets service hooks. Ready.");
+    const savedId = localStorage.getItem("mam_erp_sheets_spreadsheet_id");
+    if (savedId) {
+      addLog(`Reconnected spreadsheet ID from storage: ${savedId}`);
+    }
+    if (isSandbox) {
+      setSheetsAuthDone(true);
+      setCurrentUser({
+        uid: "sandbox-operator-99",
+        email: "local-developer@mam-erp.demo",
+        displayName: "Sandbox Developer Operator",
+        photoURL: ""
+      } as any);
+      setAccessToken("sandbox-demo-jwt-token-sequence");
+      addLog("OAUTH CONNECT: Resumed local Workspace Sandbox workspace from memory cache.");
+      return;
+    }
     const unsubscribe = initAuthListener(
       (user, token) => {
         setCurrentUser(user);
@@ -78,12 +252,35 @@ export default function ERPGoogleSheets() {
       }
     );
     return () => unsubscribe();
-  }, []);
+  }, [isSandbox]);
 
   // Sync scroll for the logs
   useEffect(() => {
     logTerminalEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [logs]);
+
+  const handleBypassSheetsAuth = () => {
+    setIsSandbox(true);
+    localStorage.setItem("mam_erp_sheets_sandbox_active", "true");
+    setSheetsAuthDone(true);
+    setCurrentUser({
+      uid: "sandbox-operator-99",
+      email: "local-developer@mam-erp.demo",
+      displayName: "Sandbox Developer Operator",
+      photoURL: ""
+    } as any);
+    setAccessToken("sandbox-demo-jwt-token-sequence");
+    
+    // Inject fallback Spreadsheet ID if blank
+    const currentId = spreadsheetId || "1h3_Sandbox_VirtualWorkbook_MAM_ERP_9128362";
+    setSpreadsheetId(currentId);
+    setSpreadsheetUrl(`https://docs.google.com/spreadsheets/d/${currentId}/edit`);
+    localStorage.setItem("mam_erp_sheets_spreadsheet_id", currentId);
+
+    addLog("OAUTH BYPASS: Activated Local Google Workspace Sandbox Simulator.");
+    addLog("SUCCESS: Synchronizations are now rerouted and processed on local safe buffers!");
+    addLog("info: Fully simulated Google Sheets APIs. No remote auth credentials required.");
+  };
 
   const handleGoogleLogin = async () => {
     setIsBtnLoading("auth");
@@ -91,6 +288,8 @@ export default function ERPGoogleSheets() {
     try {
       const res = await googleSignIn();
       if (res) {
+        setIsSandbox(false);
+        localStorage.removeItem("mam_erp_sheets_sandbox_active");
         setCurrentUser(res.user);
         setAccessToken(res.accessToken);
         setSheetsAuthDone(true);
@@ -114,6 +313,15 @@ export default function ERPGoogleSheets() {
   const handleGoogleLogout = async () => {
     addLog("Signing out and revoking session permissions...");
     try {
+      if (isSandbox) {
+        setIsSandbox(false);
+        localStorage.removeItem("mam_erp_sheets_sandbox_active");
+        setCurrentUser(null);
+        setAccessToken(null);
+        setSheetsAuthDone(false);
+        addLog("Successfully deactivated Local Sandbox Simulator Mode.");
+        return;
+      }
       await googleSignOut();
       setCurrentUser(null);
       setAccessToken(null);
@@ -129,6 +337,16 @@ export default function ERPGoogleSheets() {
     setIsBtnLoading("create");
     addLog("Initiating new Google Spreadsheet creation request on Sheets API...");
     try {
+      if (isSandbox) {
+        await new Promise(resolve => setTimeout(resolve, 800));
+        const simulatedId = "1" + Math.random().toString(36).substring(2, 17) + "_MAM_ERP_Ledger";
+        setSpreadsheetId(simulatedId);
+        setSpreadsheetUrl(`https://docs.google.com/spreadsheets/d/${simulatedId}/edit`);
+        localStorage.setItem("mam_erp_sheets_spreadsheet_id", simulatedId);
+        addLog(`SUCCESS: Built Spreadsheet "MAM ERP Enterprise Master Ledger" (Simulated File)`);
+        addLog(`Sheet ID generated: ${simulatedId}`);
+        return;
+      }
       const result = await createSpreadsheet("MAM ERP Enterprise Master Ledger");
       setSpreadsheetId(result.id);
       setSpreadsheetUrl(result.url);
@@ -171,6 +389,12 @@ export default function ERPGoogleSheets() {
     setIsBtnLoading("sync_products");
     addLog(`Preparing overwrite synchronization of ${products.length} catalog items into Sheets tab...`);
     try {
+      if (isSandbox) {
+        await new Promise(resolve => setTimeout(resolve, 600));
+        localStorage.setItem(`mam_erp_sandbox_sheet_products_${spreadsheetId}`, JSON.stringify(products));
+        addLog(`SUCCESS: Transferred ${products.length} inventory records to 'Products' sheet tab. (Sandbox Cache)`);
+        return;
+      }
       await syncProductsToSheet(spreadsheetId, products);
       addLog(`SUCCESS: Transferred ${products.length} inventory records to the "Products" sheet tab.`);
     } catch (err: any) {
@@ -188,6 +412,12 @@ export default function ERPGoogleSheets() {
     setIsBtnLoading("sync_pos");
     addLog(`Preparing overwrite synchronization of ${purchaseOrders.length} Procurement bills...`);
     try {
+      if (isSandbox) {
+        await new Promise(resolve => setTimeout(resolve, 600));
+        localStorage.setItem(`mam_erp_sandbox_sheet_pos_${spreadsheetId}`, JSON.stringify(purchaseOrders));
+        addLog(`SUCCESS: Consolidated ${purchaseOrders.length} Purchase Invoices to the "Purchase_Orders" sheet tab. (Sandbox Stream)`);
+        return;
+      }
       await syncPurchaseOrdersToSheet(spreadsheetId, purchaseOrders);
       addLog(`SUCCESS: Consolidated ${purchaseOrders.length} Purchase Invoices to the "Purchase_Orders" sheet tab.`);
     } catch (err: any) {
@@ -205,6 +435,12 @@ export default function ERPGoogleSheets() {
     setIsBtnLoading("sync_txs");
     addLog(`Preparing overwrite synchronization of ${transactions.length} POS receipts...`);
     try {
+      if (isSandbox) {
+        await new Promise(resolve => setTimeout(resolve, 650));
+        localStorage.setItem(`mam_erp_sandbox_sheet_txs_${spreadsheetId}`, JSON.stringify(transactions));
+        addLog(`SUCCESS: Generated comprehensive sync of ${transactions.length} sales receipts to the "POS_Sales_History" sheet tab. (Sandbox Stream)`);
+        return;
+      }
       await syncTransactionsToSheet(spreadsheetId, transactions);
       addLog(`SUCCESS: Generated comprehensive sync of ${transactions.length} sales receipts to the "POS_Sales_History" sheet tab.`);
     } catch (err: any) {
@@ -223,6 +459,18 @@ export default function ERPGoogleSheets() {
     setIsBtnLoading("import_products");
     addLog("Reading 'Products' tab cell indexes from Google Sheets target...");
     try {
+      if (isSandbox) {
+        await new Promise(resolve => setTimeout(resolve, 800));
+        const savedRaw = localStorage.getItem(`mam_erp_sandbox_sheet_products_${spreadsheetId}`);
+        const imported = savedRaw ? JSON.parse(savedRaw) : products;
+        if (!imported || imported.length === 0) {
+          throw new Error("Simulated 'Products' tab is blank. Execute a product export from the Sync Desk first to register sandbox values!");
+        }
+        setStagedImportProducts(imported);
+        setShowImportConfirm(true);
+        addLog(`Staged ${imported.length} items from virtual workbook (Sandbox session). Waiting for user's signature.`);
+        return;
+      }
       const imported = await importProductsFromSheet(spreadsheetId);
       setStagedImportProducts(imported);
       setShowImportConfirm(true); // Open Safety dialog
@@ -291,6 +539,21 @@ export default function ERPGoogleSheets() {
                   </svg>
                   <span>Authorize Google Workspace</span>
                 </button>
+
+                {/* Bypass / Sandbox Launcher Mode */}
+                <div className="flex flex-col gap-1.5 pt-2 border-t border-zinc-200/50 mt-1">
+                  <p className="text-[10px] text-zinc-500 leading-normal text-center">
+                    Authorized popup blocked or having Google account syncing setup problems? Bypass with a simulated Sandbox workspace.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleBypassSheetsAuth}
+                    className="w-full py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200/60 text-[10px] font-bold rounded-lg transition-all cursor-pointer text-center"
+                    title="Unlock with sandbox simulated Google service"
+                  >
+                    Launch Local Sandbox Sync Desk
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="space-y-4">
@@ -493,6 +756,62 @@ export default function ERPGoogleSheets() {
                 </button>
               </div>
 
+            </div>
+          </div>
+
+          {/* New Card: LOCAL OFFLINE EXCEL / CSV BACKUP HUB */}
+          <div className="glass-card p-6 rounded-2xl bg-surface-container-lowest border border-outline-variant flex flex-col shadow-sm">
+            <h3 className="font-display text-sm font-bold text-on-surface mb-3 flex items-center gap-1.5">
+              <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+              <span>Offline Excel & CSV Spreadsheet Station</span>
+            </h3>
+            <p className="text-[11px] text-on-surface-variant font-sans leading-relaxed mb-4">
+              Export your active inventory database as a standard CSV spreadsheet file (compatible with Microsoft Excel, Google Sheets, or LibreOffice Calc) or import an existing backup.
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* CSV Export Button */}
+              <div className="p-4 bg-surface-container-low border border-outline-variant/30 rounded-xl flex flex-col justify-between">
+                <div>
+                  <h4 className="text-xs font-bold text-on-surface">Export Active Catalog</h4>
+                  <p className="text-[10px] text-on-surface-variant mt-1 leading-snug">
+                    Generate and download a standard formatting CSV backup containing all active catalog SKUs instantly.
+                  </p>
+                </div>
+                <button
+                  onClick={handleCsvExport}
+                  className="w-full mt-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-sans text-[10px] font-bold rounded-lg transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                >
+                  <ArrowUpFromLine className="w-3.5 h-3.5" />
+                  <span>Download .CSV Backup</span>
+                </button>
+              </div>
+
+              {/* CSV Import Button */}
+              <div className="p-4 bg-surface-container-low border border-outline-variant/30 rounded-xl flex flex-col justify-between">
+                <div>
+                  <h4 className="text-xs font-bold text-on-surface">Import .CSV / Excel Rows</h4>
+                  <p className="text-[10px] text-on-surface-variant mt-1 leading-snug">
+                    Select a CSV backup file to parse columns into active memory. (Align with SKU, Name, Category, Stock Level, Cost, Sell).
+                  </p>
+                </div>
+                <div className="mt-3 relative">
+                  <input
+                    type="file"
+                    accept=".csv,.txt"
+                    onChange={handleCsvImport}
+                    id="csv-file-upload-input"
+                    className="hidden"
+                  />
+                  <label
+                    htmlFor="csv-file-upload-input"
+                    className="w-full py-1.5 border border-outline-variant hover:border-emerald-600 text-on-surface hover:text-emerald-700 bg-white font-sans text-[10px] font-bold rounded-lg transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                  >
+                    <ArrowDownToLine className="w-3.5 h-3.5" />
+                    <span>Upload CSV / Excel File</span>
+                  </label>
+                </div>
+              </div>
             </div>
           </div>
 

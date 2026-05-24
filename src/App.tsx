@@ -14,6 +14,7 @@ import ERPPurchaseOrders from "./components/ERPPurchaseOrders";
 import ERPGoogleSheets from "./components/ERPGoogleSheets";
 import ERPStaffDesk from "./components/ERPStaffDesk";
 import EnterprisePortal from "./components/EnterprisePortal";
+import SKULabelGenerator from "./components/SKULabelGenerator";
 
 import {
   LayoutDashboard,
@@ -44,8 +45,14 @@ import {
   Key,
   RefreshCw,
   Award,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Tag,
+  QrCode,
+  Camera
 } from "lucide-react";
+
+import { Cloud, CloudOff, Database, ArrowUpRight, Download, Upload, Server } from "lucide-react";
+import { loginWithGoogle, logoutFirebase } from "./firebase";
 
 // Beautiful inline mountain-peak architectural logo mapping the user's attachment
 const MAMLogo = ({ className = "h-8 w-auto" }: { className?: string }) => (
@@ -99,8 +106,15 @@ function RootDashboardContainer() {
     updateSettings,
     currentCompany,
     currentStaff,
-    logout
+    logout,
+    firebaseUser,
+    firebaseLoading,
+    syncWithCloud,
+    pullFromCloud,
+    cloudSyncLogs
   } = useApp();
+
+  const [showCloudCenter, setShowCloudCenter] = useState(false);
 
   if (!currentCompany) {
     return <EnterprisePortal />;
@@ -204,6 +218,27 @@ function RootDashboardContainer() {
               className="pl-9 pr-4 py-2 border border-outline-variant bg-surface-container-low rounded-lg text-xs w-full focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all"
             />
           </div>
+
+          {/* Firestore Cloud Sync Status Trigger */}
+          <button
+            onClick={() => setShowCloudCenter(!showCloudCenter)}
+            className={`p-2 px-3 border rounded-lg transition-all cursor-pointer relative select-none flex items-center justify-center gap-2 text-xs font-bold ${
+              firebaseUser
+                ? "bg-emerald-900/20 text-emerald-400 border-emerald-500/50 hover:bg-emerald-900/30"
+                : "bg-surface-container-low text-on-surface-variant border-outline-variant hover:bg-surface-container-high"
+            }`}
+          >
+            {firebaseLoading ? (
+              <span className="w-3.5 h-3.5 border-2 border-[#005BFF] border-t-transparent rounded-full animate-spin" />
+            ) : firebaseUser ? (
+              <Cloud className="w-4 h-4 text-emerald-400 animate-pulse" />
+            ) : (
+              <CloudOff className="w-4 h-4 text-zinc-500" />
+            )}
+            <span className="hidden sm:inline">
+              {firebaseLoading ? "Loading..." : firebaseUser ? "Cloud Safe" : "Go Cloud"}
+            </span>
+          </button>
 
           {/* Integrated notification trigger */}
           <div className="relative">
@@ -431,6 +466,18 @@ function RootDashboardContainer() {
                 >
                   <FileSpreadsheet className="w-4 h-4 text-on-surface-variant" />
                   Google Sheets Hub
+                </button>
+
+                <button
+                  onClick={() => setErpView("SKULabelGenerator")}
+                  className={`w-full px-3 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-3 text-left cursor-pointer ${
+                    erpView === "SKULabelGenerator"
+                      ? "bg-secondary-fixed text-on-secondary-fixed font-black border border-outline-variant/40"
+                      : "text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface"
+                  }`}
+                >
+                  <Tag className="w-4 h-4 text-[#005BFF]" />
+                  SKU Tag Workshop
                 </button>
 
                 <button
@@ -1026,6 +1073,8 @@ function RootDashboardContainer() {
                   );
                 case "GoogleSheets":
                   return <ERPGoogleSheets />;
+                case "SKULabelGenerator":
+                  return <SKULabelGenerator />;
                 case "StaffDesk":
                   return <ERPStaffDesk />;
                 default:
@@ -1359,6 +1408,175 @@ function RootDashboardContainer() {
                 </div>
               )}
 
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================== */}
+      {/* FEATURE: Firebase Cloud Vault Control Center */}
+      {/* ========================================== */}
+      {showCloudCenter && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex justify-end animate-fade-in">
+          {/* Backdrop exit click */}
+          <div className="absolute inset-x-0 h-full" onClick={() => setShowCloudCenter(false)} />
+
+          <div className="w-full max-w-md bg-[#0a0a0c] border-l border-outline-variant/60 h-full relative z-10 flex flex-col shadow-2xl text-left">
+            {/* Header */}
+            <div className="p-4 bg-surface-container-low border-b border-outline-variant flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Database className="w-5 h-5 text-primary" />
+                <div>
+                  <h3 className="text-sm font-black text-on-surface font-display tracking-tight">Enterprise Cloud Sync Panel</h3>
+                  <p className="text-[10px] text-zinc-500 font-mono">ID: {currentCompany?.id}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCloudCenter(false)}
+                className="p-1 px-2 hover:bg-error/10 hover:text-error rounded-lg text-xs font-bold transition-all text-zinc-400 cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+
+            {/* Core Settings / Operations Content */}
+            <div className="p-6 flex-1 overflow-y-auto space-y-6">
+              {/* Project metadata */}
+              <div className="p-4 bg-[#111114] border border-outline-variant rounded-xl space-y-2">
+                <div className="flex justify-between items-center text-[10px] font-bold text-zinc-400 font-mono uppercase">
+                  <span>Resource Spec</span>
+                  <span className="text-emerald-400 animate-pulse">● Connected</span>
+                </div>
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-zinc-500 font-sans">Project ID:</span>
+                    <strong className="text-on-surface font-mono">automated-arch-4cf5x</strong>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-zinc-500 font-sans">Region:</span>
+                    <strong className="text-on-surface font-mono">asia-southeast1</strong>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-zinc-500 font-sans">Database Instance:</span>
+                    <strong className="text-primary font-mono text-[10.5px]">ai-studio-1fdea772-32f6-49e1-ba64-a2ae5bab1355</strong>
+                  </div>
+                </div>
+              </div>
+
+              {/* Security Banner */}
+              <div className="p-3 bg-blue-900/10 border border-blue-500/20 text-blue-300 rounded-lg text-[10.5px] leading-relaxed flex items-start gap-2">
+                <Server className="w-4 h-4 shrink-0 mt-0.5 text-blue-400" />
+                <p>This session communicates directly with secure Firestore collections. Writing products or ledger sales synchronizes dynamically across multi-tenant endpoints.</p>
+              </div>
+
+              {/* Session State */}
+              <div className="space-y-3">
+                <h4 className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider">Cloud Authentication</h4>
+                
+                {!firebaseUser ? (
+                  <div className="p-6 bg-[#131316] border border-outline-variant/60 rounded-xl text-center space-y-4">
+                    <CloudOff className="w-10 h-10 text-on-surface-variant/40 mx-auto" />
+                    <div className="space-y-1">
+                      <p className="text-xs font-bold text-on-surface">Offline Operations Active</p>
+                      <p className="text-[10px] text-zinc-500">Authenticate with your Google account to unlock full multi-user sync and remote backups.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          await loginWithGoogle();
+                        } catch (err: any) {
+                          alert(`Authentication failed: ${err.message}`);
+                        }
+                      }}
+                      className="px-4 py-2 w-full bg-[#005BFF] hover:bg-[#004bd4] text-white rounded-lg text-xs font-bold transition-all shadow-md cursor-pointer flex items-center justify-center gap-2"
+                    >
+                      <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                        <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                        <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05"/>
+                        <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335"/>
+                      </svg>
+                      <span>Sign In with Google</span>
+                    </button>
+                  </div>
+                ) : (
+                  <div className="p-4 bg-[#111113] border border-emerald-500/20 rounded-xl space-y-4">
+                    <div className="flex items-center gap-3">
+                      <div className="h-10 w-10 rounded-full overflow-hidden border border-emerald-500/50">
+                        {firebaseUser.photoURL ? (
+                          <img src={firebaseUser.photoURL} alt="" referrerPolicy="no-referrer" className="h-full w-full object-cover" />
+                        ) : (
+                          <div className="h-full w-full bg-[#005BFF] flex items-center justify-center text-white font-bold text-xs uppercase animate-pulse">
+                            {firebaseUser.email?.slice(0, 2)}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-black text-on-surface truncate">{firebaseUser.displayName || "Google Operator"}</p>
+                        <p className="text-[10px] text-zinc-500 truncate font-mono">{firebaseUser.email}</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 pt-1">
+                      <button
+                        type="button"
+                        onClick={syncWithCloud}
+                        className="p-3 bg-emerald-950/25 border border-emerald-500/35 hover:bg-emerald-900/30 text-emerald-300 rounded-xl text-xs font-bold transition-all cursor-pointer flex flex-col items-center gap-2 group shadow-sm active:scale-95"
+                      >
+                        <Upload className="w-5 h-5 text-emerald-400 group-hover:-translate-y-0.5 transition-transform" />
+                        <span>Cloud Push</span>
+                      </button>
+                      
+                      <button
+                        type="button"
+                        onClick={pullFromCloud}
+                        className="p-3 bg-[#17171a] border border-outline-variant hover:bg-surface-container-low text-on-surface rounded-xl text-xs font-bold transition-all cursor-pointer flex flex-col items-center gap-2 group shadow-sm active:scale-95"
+                      >
+                        <Download className="w-5 h-5 text-zinc-300 group-hover:translate-y-0.5 transition-transform" />
+                        <span>Cloud Pull</span>
+                      </button>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          await logoutFirebase();
+                        } catch (err: any) {
+                          alert(`Sign out failed: ${err.message}`);
+                        }
+                      }}
+                      className="text-[10px] text-zinc-400 hover:text-error hover:underline text-center block w-full pt-1 cursor-pointer"
+                    >
+                      Disconnect Google Trust
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Sync Operation logs */}
+              <div className="space-y-2 text-left">
+                <div className="flex justify-between items-center">
+                  <span className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider">Cloud Ledger Log</span>
+                  <span className="text-[9px] font-mono text-zinc-500">Max 50 events</span>
+                </div>
+                <div className="bg-[#040405] border border-outline-variant/50 rounded-xl p-3 h-48 overflow-y-auto font-mono text-[9px] text-zinc-400 space-y-1.5">
+                  {cloudSyncLogs.length === 0 ? (
+                    <p className="text-zinc-600 italic text-center py-16">No operations logged in current session.</p>
+                  ) : (
+                    cloudSyncLogs.map((log, index) => (
+                      <p key={index} className="leading-relaxed border-b border-zinc-900/50 pb-1.5 last:border-none break-all">{log}</p>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Micro footer */}
+            <div className="p-3 bg-surface-container-low border-t border-outline-variant text-[9px] text-zinc-500 text-center font-mono">
+              SECURE ENVELOPE: SHIELD V2 • ABAC Zero-Trust
             </div>
           </div>
         </div>

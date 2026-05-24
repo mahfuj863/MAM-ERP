@@ -1,0 +1,162 @@
+{
+  "entities": {
+    "CompanyInfo": {
+      "title": "CompanyInfo",
+      "description": "Multi-tenant company registration details",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier for the tenant company" },
+        "name": { "type": "string", "description": "Legal business name" },
+        "ownerName": { "type": "string", "description": "Name of primary system operator or CEO" },
+        "address": { "type": "string", "description": "Physical corporate address" },
+        "phone": { "type": "string", "description": "Contact telephone number" },
+        "username": { "type": "string", "description": "Owner administrator login username" },
+        "password": { "type": "string", "description": "Owner administrator password credential" },
+        "registrationDate": { "type": "string", "description": "ISO date of account setup" },
+        "ownerUid": { "type": "string", "description": "Google Auth UID of the tenant owner" }
+      },
+      "required": ["id", "name", "ownerName", "username", "password", "ownerUid"]
+    },
+    "StaffMember": {
+      "title": "StaffMember",
+      "description": "Tenant company authorized staff account",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "companyId": { "type": "string" },
+        "name": { "type": "string" },
+        "username": { "type": "string" },
+        "password": { "type": "string" },
+        "role": { "type": "string", "enum": ["Admin", "Manager", "Cashier"] },
+        "branch": { "type": "string" }
+      },
+      "required": ["id", "companyId", "name", "username", "password", "role"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "Master catalog product detailing costs, margins, and stock parameters",
+      "type": "object",
+      "properties": {
+        "sku": { "type": "string" },
+        "name": { "type": "string" },
+        "category": { "type": "string" },
+        "stockLevel": { "type": "integer" },
+        "minStockLevel": { "type": "integer" },
+        "reorderPoint": { "type": "integer" },
+        "costPrice": { "type": "number" },
+        "sellPrice": { "type": "number" },
+        "suggestedMsrp": { "type": "number" },
+        "imageUrl": { "type": "string" },
+        "location": { "type": "string" },
+        "status": { "type": "string", "enum": ["Healthy", "Low Stock", "Out of Stock", "Optimal"] },
+        "description": { "type": "string" }
+      },
+      "required": ["sku", "name", "category", "stockLevel", "minStockLevel", "costPrice", "sellPrice"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "Sales logs containing invoice, client name, and receipt info",
+      "type": "object",
+      "properties": {
+        "invoiceId": { "type": "string" },
+        "customerName": { "type": "string" },
+        "date": { "type": "string" },
+        "amount": { "type": "number" },
+        "status": { "type": "string", "enum": ["PAID", "PENDING", "OVERDUE"] },
+        "paymentMode": { "type": "string", "enum": ["Cash", "Card", "Credit"] }
+      },
+      "required": ["invoiceId", "customerName", "date", "amount", "status"]
+    },
+    "Movement": {
+      "title": "Movement",
+      "description": "Inward and outward stock log logbook detailing transaction logs",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "date": { "type": "string" },
+        "time": { "type": "string" },
+        "sku": { "type": "string" },
+        "description": { "type": "string" },
+        "type": { "type": "string", "enum": ["IN", "OUT", "ADJ"] },
+        "quantity": { "type": "integer" },
+        "referenceId": { "type": "string" },
+        "executedBy": { "type": "string" },
+        "avatarUrl": { "type": "string" }
+      },
+      "required": ["id", "date", "time", "sku", "description", "type", "quantity"]
+    },
+    "PurchaseOrder": {
+      "title": "PurchaseOrder",
+      "description": "Procurement request form sent to primary of backup logistics distributors",
+      "type": "object",
+      "properties": {
+        "poId": { "type": "string" },
+        "supplierName": { "type": "string" },
+        "date": { "type": "string" },
+        "status": { "type": "string", "enum": ["Pending", "Partial", "Fully Received", "Cancelled"] },
+        "total": { "type": "number" },
+        "initials": { "type": "string" }
+      },
+      "required": ["poId", "supplierName", "date", "status", "total"]
+    },
+    "Customer": {
+      "title": "Customer",
+      "description": "Client profile mapping unique buyer index files",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "accountNo": { "type": "string" }
+      },
+      "required": ["id", "name", "email"]
+    },
+    "SystemSettings": {
+      "title": "SystemSettings",
+      "description": "Config parameters for layout and tax calculation parameters",
+      "type": "object",
+      "properties": {
+        "billingVat": { "type": "number" },
+        "mainHubBranch": { "type": "string" },
+        "currencySymbol": { "type": "string" },
+        "lowStockThreshold": { "type": "integer" },
+        "defaultPaymentMode": { "type": "string" }
+      },
+      "required": ["billingVat", "mainHubBranch", "currencySymbol", "lowStockThreshold", "defaultPaymentMode"]
+    }
+  },
+  "firestore": {
+    "/companies/{companyId}": {
+      "schema": "CompanyInfo",
+      "description": "Single-tenant registration details"
+    },
+    "/companies/{companyId}/staffMembers/{staffId}": {
+      "schema": "StaffMember",
+      "description": "Staff account registry"
+    },
+    "/companies/{companyId}/products/{sku}": {
+      "schema": "Product",
+      "description": "Product item definitions in master catalog"
+    },
+    "/companies/{companyId}/transactions/{invoiceId}": {
+      "schema": "Transaction",
+      "description": "Sales and register transactions"
+    },
+    "/companies/{companyId}/movements/{movementId}": {
+      "schema": "Movement",
+      "description": "Audit trails for stock shifts and restocks"
+    },
+    "/companies/{companyId}/purchaseOrders/{poId}": {
+      "schema": "PurchaseOrder",
+      "description": "Procurement orders placed with wholesale vendors"
+    },
+    "/companies/{companyId}/customers/{customerId}": {
+      "schema": "Customer",
+      "description": "Accounts database for retail buyers"
+    },
+    "/companies/{companyId}/settings/system": {
+      "schema": "SystemSettings",
+      "description": "System-wide preferences and defaults"
+    }
+  }
+}

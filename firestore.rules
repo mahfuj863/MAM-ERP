@@ -1,0 +1,116 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 1. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Common helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isCompanyOwner(companyId) {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/companies/$(companyId)) &&
+        get(/databases/$(database)/documents/companies/$(companyId)).data.ownerUid == request.auth.uid;
+    }
+
+    function isCompanyStaff(companyId) {
+      return isSignedIn() && (
+        isCompanyOwner(companyId) ||
+        exists(/databases/$(database)/documents/companies/$(companyId)/staffMembers/$(request.auth.uid))
+      );
+    }
+
+    // Validation definitions
+    function isValidCompany(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.name is string && data.name.size() <= 128 &&
+             data.ownerName is string && data.ownerName.size() <= 128 &&
+             data.username is string && data.username.size() <= 128 &&
+             data.password is string && data.password.size() <= 128 &&
+             data.ownerUid is string && data.ownerUid == request.auth.uid;
+    }
+
+    function isValidStaffMember(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.companyId is string && data.companyId.size() <= 128 &&
+             data.name is string && data.name.size() <= 128 &&
+             data.username is string && data.username.size() <= 128 &&
+             data.password is string && data.password.size() <= 128 &&
+             data.role is string && (data.role == "Admin" || data.role == "Manager" || data.role == "Cashier");
+    }
+
+    function isValidProduct(data) {
+      return data.sku is string && data.sku.size() <= 128 &&
+             data.name is string && data.name.size() <= 128 &&
+             data.category is string && data.category.size() <= 128 &&
+             data.stockLevel is int &&
+             data.minStockLevel is int &&
+             data.costPrice is number && data.costPrice >= 0 &&
+             data.sellPrice is number && data.sellPrice >= 0;
+    }
+
+    function isValidTransaction(data) {
+      return data.invoiceId is string && data.invoiceId.size() <= 128 &&
+             data.customerName is string && data.customerName.size() <= 128 &&
+             data.date is string && data.date.size() <= 64 &&
+             data.amount is number && data.amount >= 0 &&
+             data.status is string && (data.status == "PAID" || data.status == "PENDING" || data.status == "OVERDUE");
+    }
+
+    // Tenant and relational rule configurations
+    match /companies/{companyId} {
+      allow read: if isSignedIn() && (resource.data.ownerUid == request.auth.uid || isCompanyStaff(companyId));
+      allow create: if isSignedIn() && request.resource.data.ownerUid == request.auth.uid && isValidCompany(request.resource.data);
+      allow update: if isSignedIn() && resource.data.ownerUid == request.auth.uid && request.resource.data.ownerUid == request.auth.uid && isValidCompany(request.resource.data);
+      allow delete: if isSignedIn() && resource.data.ownerUid == request.auth.uid;
+
+      // Staff Member Registry Sub-Collection
+      match /staffMembers/{staffId} {
+        allow read: if isSignedIn() && isCompanyStaff(companyId);
+        allow write: if isSignedIn() && isCompanyOwner(companyId) && isValidStaffMember(request.resource.data);
+      }
+
+      // Catalog Product Master Sub-Collection
+      match /products/{sku} {
+        allow read: if isSignedIn() && isCompanyStaff(companyId);
+        allow create, update: if isSignedIn() && isCompanyStaff(companyId) && isValidProduct(request.resource.data);
+        allow delete: if isSignedIn() && isCompanyOwner(companyId);
+      }
+
+      // Sales Registry Sub-Collection
+      match /transactions/{invoiceId} {
+        allow read: if isSignedIn() && isCompanyStaff(companyId);
+        allow write: if isSignedIn() && isCompanyStaff(companyId) && isValidTransaction(request.resource.data);
+      }
+
+      // Movements Log Auditing Sub-Collection
+      match /movements/{movementId} {
+        allow read: if isSignedIn() && isCompanyStaff(companyId);
+        allow write: if isSignedIn() && isCompanyStaff(companyId);
+      }
+
+      // Purchase Orders Sub-Collection
+      match /purchaseOrders/{poId} {
+        allow read: if isSignedIn() && isCompanyStaff(companyId);
+        allow write: if isSignedIn() && isCompanyStaff(companyId);
+      }
+
+      // Customer Directory Sub-Collection
+      match /customers/{customerId} {
+        allow read: if isSignedIn() && isCompanyStaff(companyId);
+        allow write: if isSignedIn() && isCompanyStaff(companyId);
+      }
+
+      // Preferences Settings Sub-Collection
+      match /settings/system {
+        allow read: if isSignedIn() && isCompanyStaff(companyId);
+        allow write: if isSignedIn() && isCompanyOwner(companyId);
+      }
+    }
+  }
+}

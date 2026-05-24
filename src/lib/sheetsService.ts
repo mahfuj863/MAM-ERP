@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { initializeApp } from "firebase/app";
+import { initializeApp, getApps, getApp } from "firebase/app";
 import {
   getAuth,
   signInWithPopup,
@@ -14,13 +14,13 @@ import {
 import firebaseConfig from "../../firebase-applet-config.json";
 import { Product, PurchaseOrder, Transaction } from "../types";
 
-const app = initializeApp(firebaseConfig);
+const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 
 const provider = new GoogleAuthProvider();
 provider.addScope("https://www.googleapis.com/auth/spreadsheets");
 
-let cachedAccessToken: string | null = null;
+let cachedAccessToken: string | null = typeof window !== "undefined" ? localStorage.getItem("mam_erp_sheets_access_token") : null;
 let isSigningIn = false;
 
 export const initAuthListener = (
@@ -28,6 +28,10 @@ export const initAuthListener = (
   onAuthFailure: () => void
 ) => {
   return onAuthStateChanged(auth, async (user) => {
+    const savedToken = typeof window !== "undefined" ? localStorage.getItem("mam_erp_sheets_access_token") : null;
+    if (savedToken) {
+      cachedAccessToken = savedToken;
+    }
     if (user) {
       if (cachedAccessToken) {
         onAuthSuccess(user, cachedAccessToken);
@@ -37,6 +41,9 @@ export const initAuthListener = (
       }
     } else {
       cachedAccessToken = null;
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("mam_erp_sheets_access_token");
+      }
       onAuthFailure();
     }
   });
@@ -51,6 +58,9 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
       throw new Error("Failed to retrieve oauth access token from Google provider.");
     }
     cachedAccessToken = credential.accessToken;
+    if (typeof window !== "undefined") {
+      localStorage.setItem("mam_erp_sheets_access_token", cachedAccessToken);
+    }
     return { user: result.user, accessToken: cachedAccessToken };
   } catch (error) {
     console.error("Popup Authentication failed:", error);
@@ -67,6 +77,9 @@ export const getAccessToken = (): string | null => {
 export const googleSignOut = async (): Promise<void> => {
   await auth.signOut();
   cachedAccessToken = null;
+  if (typeof window !== "undefined") {
+    localStorage.removeItem("mam_erp_sheets_access_token");
+  }
 };
 
 /**

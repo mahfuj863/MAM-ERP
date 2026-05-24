@@ -23,7 +23,11 @@ import {
   Package,
   FileText,
   HelpCircle,
-  Settings
+  Settings,
+  QrCode,
+  Camera,
+  X,
+  Search
 } from "lucide-react";
 
 export default function ERPStaffDesk() {
@@ -58,6 +62,51 @@ export default function ERPStaffDesk() {
   // Active dataset edit state
   const [activeDataset, setActiveDataset] = useState<"products" | "transactions" | "orders" | "customers">("products");
   const [editFeedMsg, setEditFeedMsg] = useState<string | null>(null);
+
+  // Real-time camera scanner & overlay states
+  const [showScannerModal, setShowScannerModal] = useState(false);
+  const [cameraActive, setCameraActive] = useState(false);
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  const [scannedProduct, setScannedProduct] = useState<Product | null>(null);
+  const [scannerFeedback, setScannerFeedback] = useState("");
+  const videoRef = React.useRef<HTMLVideoElement | null>(null);
+  const overlayVideoRef = React.useRef<HTMLVideoElement | null>(null);
+
+  // Stop active camera session
+  const stopScannerCamera = () => {
+    if (cameraStream) {
+      cameraStream.getTracks().forEach(track => track.stop());
+      setCameraStream(null);
+    }
+  };
+
+  // Start active camera media stream
+  const startScannerCamera = async (isOverlay: boolean) => {
+    stopScannerCamera();
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment" }
+      });
+      setCameraStream(stream);
+      const targetRef = isOverlay ? overlayVideoRef : videoRef;
+      if (targetRef.current) {
+        targetRef.current.srcObject = stream;
+      }
+      setScannerFeedback("Camera loaded successfully! Ready to scan.");
+    } catch (err: any) {
+      try {
+        const streamFallback = await navigator.mediaDevices.getUserMedia({ video: true });
+        setCameraStream(streamFallback);
+        const targetRef = isOverlay ? overlayVideoRef : videoRef;
+        if (targetRef.current) {
+          targetRef.current.srcObject = streamFallback;
+        }
+        setScannerFeedback("Fallback webcam loaded. Ready.");
+      } catch (fallbackErr: any) {
+        setScannerFeedback("Camera Blocked: Initializing scannable diagnostic bypass list.");
+      }
+    }
+  };
 
   // Filter current company's staff members
   const activeCompanyStaff = staffMembers.filter(
@@ -254,8 +303,52 @@ export default function ERPStaffDesk() {
 
       {/* RENDER VIEW 1: STAFF ROSTER PANEL */}
       {controlTab === "staff" && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start relative">
           
+          {/* STAFF DESK CAM SCAN COMPANION CONTROLS */}
+          <div className="col-span-12 flex flex-col sm:flex-row justify-between items-start sm:items-center p-4 bg-[#0a0a0c] border border-outline-variant/50 rounded-2xl gap-4 mb-2 shadow-sm animate-fade-in text-left">
+            <div className="space-y-1">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-primary/20 text-primary border border-primary/20">
+                <QrCode className="w-3 h-3 text-[#005BFF]" /> Live Operations Companion
+              </span>
+              <h3 className="text-sm font-bold text-on-surface">Staff Inventory Quick-Scan & Camera Desk</h3>
+              <p className="text-[10px] text-on-surface-variant leading-relaxed">Perform rapid inventory lookups, adjust stock levels via live barcode simulation, or toggle persistent live-cam overlays.</p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowScannerModal(true);
+                  startScannerCamera(false);
+                }}
+                className="px-4 py-2 bg-primary text-white hover:bg-opacity-95 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-md active:scale-95"
+              >
+                <QrCode className="w-4 h-4 text-white" />
+                <span>Quick Scan Modal</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (cameraActive) {
+                    stopScannerCamera();
+                    setCameraActive(false);
+                  } else {
+                    setCameraActive(true);
+                    startScannerCamera(true);
+                  }
+                }}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-sm border ${
+                  cameraActive 
+                    ? "bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-500" 
+                    : "bg-surface-container-low hover:bg-surface-container-high text-on-surface-variant border-outline-variant"
+                }`}
+              >
+                <Camera className="w-4 h-4" />
+                <span>{cameraActive ? "Hide Cam Overlay" : "Show Cam Overlay"}</span>
+              </button>
+            </div>
+          </div>
+
           {/* Card left: Register new Staff Profile */}
           <div className="lg:col-span-5 glass-card p-6 rounded-2xl bg-surface-container-lowest border border-outline-variant shadow-sm space-y-4">
             <div className="border-b border-outline-variant/40 pb-3">
@@ -924,6 +1017,260 @@ export default function ERPStaffDesk() {
           <div className="pt-3 text-[11px] text-zinc-500 font-medium flex items-center gap-1.5 border-t border-outline-variant/30 select-none">
             <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
             <span>Database Direct Override is highly sensitive. Standard business rules bypass limits and authorize silent overrides immediately.</span>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================== */}
+      {/* FEATURE: Barcode/QR Scanner Modal */}
+      {/* ========================================== */}
+      {showScannerModal && (
+        <div className="fixed inset-0 bg-black/75 flex items-center justify-center z-50 animate-fade-in p-4">
+          <div className="bg-[#0b0b0d] border border-outline-variant rounded-2xl w-full max-w-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="p-4 bg-surface-container-low border-b border-outline-variant flex justify-between items-center text-on-surface">
+              <div className="flex items-center gap-2">
+                <QrCode className="w-5 h-5 text-primary" />
+                <h3 className="font-display font-bold text-sm">Staff Interactive Barcode Scanner</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  stopScannerCamera();
+                  setShowScannerModal(false);
+                }}
+                className="p-1.5 text-on-surface-variant hover:text-error hover:bg-error/5 rounded-lg transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto custom-scrollbar space-y-4">
+              {/* Camera view */}
+              <div className="relative aspect-video bg-zinc-950 border border-outline-variant rounded-xl overflow-hidden flex items-center justify-center group shadow-inner">
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  className="w-full h-full object-cover scale-x-[-1]"
+                />
+                
+                {/* Visual red laser scanner beam */}
+                <div className="absolute top-0 left-0 right-0 h-[2px] bg-red-500 shadow-[0_0_8px_red] animate-[bounce_2s_infinite]" />
+                
+                {/* Scanning reticle box */}
+                <div className="absolute inset-0 border-[3px] border-primary/40 rounded-xl m-10 border-dashed pointer-events-none flex items-center justify-center">
+                  <span className="text-[10px] text-white/50 font-mono tracking-widest uppercase bg-black/55 px-2.5 py-1 rounded">ALIGN CODE AREA</span>
+                </div>
+
+                <div className="absolute bottom-2 left-2 bg-black/60 px-3 py-1.5 rounded-lg text-[10px] text-zinc-300 font-mono">
+                  {scannerFeedback}
+                </div>
+              </div>
+
+              {/* Simulation options */}
+              <div className="p-4 bg-surface-container-low border border-outline-variant/50 rounded-xl space-y-3">
+                <div className="flex justify-between items-center pb-2 border-b border-outline-variant/20">
+                  <h4 className="text-xs font-bold text-on-surface flex items-center gap-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5 text-primary" /> Simulate Hardware Scan Key
+                  </h4>
+                  <span className="text-[9px] text-on-surface-variant font-semibold">Select SKU to trigger micro-checkout checks</span>
+                </div>
+                
+                <div className="flex gap-2">
+                  <select
+                    className="flex-1 px-3 py-2 bg-[#121214] border border-outline-variant rounded-lg text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-primary w-full text-on-surface cursor-pointer"
+                    onChange={(e) => {
+                      const prod = products.find(p => p.sku === e.target.value);
+                      if (prod) {
+                        // Play laser beep
+                        try {
+                          const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+                          const osc = audioCtx.createOscillator();
+                          const gain = audioCtx.createGain();
+                          osc.connect(gain);
+                          gain.connect(audioCtx.destination);
+                          osc.type = "sine";
+                          osc.frequency.value = 1450;
+                          gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
+                          osc.start();
+                          osc.stop(audioCtx.currentTime + 0.08);
+                        } catch (err) {}
+                        setScannedProduct(prod);
+                        setScannerFeedback(`SUCCESS: Scanned SKU - ${prod.sku}`);
+                      }
+                    }}
+                  >
+                    <option value="">-- Choose any product to scan --</option>
+                    {products.map(p => (
+                      <option key={p.sku} value={p.sku}>
+                        {p.name} ({p.sku}) [Stock: {p.stockLevel}]
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Scanned result detail card */}
+              {scannedProduct ? (
+                <div className="p-4 bg-[#121214] border border-primary/25 rounded-xl flex gap-4 animate-fade-in relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-16 h-16 bg-primary/10 rounded-bl-full flex items-center justify-center font-bold text-xs">
+                    MATCH
+                  </div>
+                  <div className="w-16 h-16 rounded-lg overflow-hidden border border-outline-variant bg-surface-container-lowest shrink-0">
+                    <img src={scannedProduct.imageUrl} alt={scannedProduct.name} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                  </div>
+                  <div className="flex-1 min-w-0 space-y-1 text-left">
+                    <h3 className="text-xs font-black text-on-surface truncate pr-14">{scannedProduct.name}</h3>
+                    <p className="text-[10px] text-zinc-500 font-mono">SKU ID: <strong className="text-primary">{scannedProduct.sku}</strong></p>
+                    <div className="grid grid-cols-2 gap-2 pt-1">
+                      <div className="text-[10px]">
+                        <span className="text-zinc-500 block">Selling Price</span>
+                        <strong className="text-on-surface">${scannedProduct.sellPrice.toFixed(2)}</strong>
+                      </div>
+                      <div className="text-[10px]">
+                        <span className="text-zinc-500 block">Inventory Level</span>
+                        <strong className={` ${scannedProduct.stockLevel <= scannedProduct.minStockLevel ? "text-error" : "text-emerald-500"}`}>
+                          {scannedProduct.stockLevel} units remaining
+                        </strong>
+                      </div>
+                    </div>
+                    
+                    {/* Inline stock adjustment helper */}
+                    <div className="mt-3 pt-2.5 border-t border-outline-variant/30 flex gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const nextStock = scannedProduct.stockLevel + 10;
+                          const nextProds = products.map(p => p.sku === scannedProduct.sku ? { ...p, stockLevel: nextStock } : p);
+                          setProducts(nextProds);
+                          setScannedProduct({ ...scannedProduct, stockLevel: nextStock });
+                          
+                          addMovement({
+                            id: `mov-add-${Date.now()}`,
+                            date: new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }),
+                            time: new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }),
+                            sku: scannedProduct.sku,
+                            description: `Restocked 10 units via staff barcode scanner companion`,
+                            type: "IN",
+                            quantity: 10,
+                            referenceId: "MAN-ADJ",
+                            executedBy: "Enterprise Staff",
+                            avatarUrl: ""
+                          });
+                        }}
+                        className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-[10px] font-bold transition-colors cursor-pointer"
+                      >
+                        + Add 10 Stock
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const nextStock = Math.max(0, scannedProduct.stockLevel - 1);
+                          const nextProds = products.map(p => p.sku === scannedProduct.sku ? { ...p, stockLevel: nextStock } : p);
+                          setProducts(nextProds);
+                          setScannedProduct({ ...scannedProduct, stockLevel: nextStock });
+                          
+                          addMovement({
+                            id: `mov-ded-${Date.now()}`,
+                            date: new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }),
+                            time: new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }),
+                            sku: scannedProduct.sku,
+                            description: `Issued 1 unit via staff barcode scanner companion`,
+                            type: "OUT",
+                            quantity: 1,
+                            referenceId: "MAN-ADJ",
+                            executedBy: "Enterprise Staff",
+                            avatarUrl: ""
+                          });
+                        }}
+                        className="px-2.5 py-1 bg-red-600 hover:bg-red-500 text-white rounded text-[10px] font-bold transition-colors cursor-pointer"
+                      >
+                        - Issue 1 Unit
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="py-6 text-center text-[11px] text-zinc-500 italic bg-surface-container-low border border-dashed border-outline-variant/40 rounded-xl">
+                  Ready. Simulate a barcode trigger or present product tag above.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================== */}
+      {/* FEATURE: Persistent Mini Camera Overlay UI */}
+      {/* ========================================== */}
+      {cameraActive && (
+        <div className="fixed bottom-6 right-6 w-72 bg-[#09090b] border border-outline-variant rounded-2xl shadow-2xl z-40 animate-slide-in overflow-hidden flex flex-col font-sans">
+          <div className="p-3 bg-surface-container-low border-b border-outline-variant flex justify-between items-center text-on-surface text-xs font-semibold">
+            <div className="flex items-center gap-1.5 text-emerald-500">
+              <span className="animate-pulse block w-2 h-2 rounded-full bg-emerald-500" />
+              <span>Staff Live-Cam Overlay</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                stopScannerCamera();
+                setCameraActive(false);
+              }}
+              className="p-1 hover:bg-error/10 hover:text-error rounded text-zinc-400 transition-colors"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <div className="p-3 space-y-2">
+            <div className="relative aspect-video bg-black rounded-lg overflow-hidden border border-outline-variant">
+              <video
+                ref={overlayVideoRef}
+                autoPlay
+                playsInline
+                className="w-full h-full object-cover scale-x-[-1]"
+              />
+              <div className="absolute top-1/2 left-0 right-0 h-[1.5px] bg-emerald-500 animate-pulse" />
+            </div>
+
+            <div className="space-y-1.5 text-left">
+              <label className="block text-[8.5px] font-mono text-zinc-500 uppercase tracking-wider">Simulate Decode</label>
+              <select
+                className="w-full px-2.5 py-1.5 bg-surface-container-lowest border border-outline-variant rounded-lg text-xs font-semibold text-on-surface cursor-pointer focus:outline-none"
+                onChange={(e) => {
+                  const prod = products.find(p => p.sku === e.target.value);
+                  if (prod) {
+                    setScannedProduct(prod);
+                  }
+                }}
+              >
+                <option value="">-- Rapid Selector --</option>
+                {products.map(p => (
+                  <option key={p.sku} value={p.sku}>{p.sku} - {p.name}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Micro display in persistent camera frame */}
+            {scannedProduct ? (
+              <div className="p-2.5 bg-[#121214] border border-outline-variant rounded-xl text-left text-xs space-y-1 animate-fade-in text-on-surface">
+                <p className="font-bold text-on-surface truncate">{scannedProduct.name}</p>
+                <div className="flex justify-between items-center text-[10px]">
+                  <span className="text-zinc-500">Stock Status:</span>
+                  <span className={`font-mono font-bold ${scannedProduct.stockLevel <= scannedProduct.minStockLevel ? "text-error" : "text-emerald-500"}`}>
+                    {scannedProduct.stockLevel} Left
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-[10px] pt-1 border-t border-outline-variant/30 text-zinc-400">
+                  <span>Price: ${scannedProduct.sellPrice.toFixed(2)}</span>
+                  <span>Loc: Zone A</span>
+                </div>
+              </div>
+            ) : (
+              <p className="text-[10px] text-zinc-500 italic text-center py-2 bg-surface-container-low border border-dashed border-outline-variant/30 rounded-lg">
+                Decoded results display here in real-time.
+              </p>
+            )}
           </div>
         </div>
       )}
